@@ -1,0 +1,2 @@
+from .Regression import GaussianProcessRegression
+from .Classification import GaussianProcessClassifier
