@@ -1,6 +1,6 @@
 import numpy as np
 from scipy.optimize import minimize
-from .utils.kernels import Kernel
+from utils.kernels import Kernel
 
 class GaussianProcessClassifier:
     def __init__(self, kernel_type='linear', noise=1e-10, **kernel_params):
@@ -29,12 +29,21 @@ class GaussianProcessClassifier:
             H = np.diag(W)
             K = self.kernel(X, X) + self.noise * np.eye(len(X))  # Adding noise term for numerical stability
             mode += np.linalg.solve(H + np.linalg.inv(K), y - p - np.dot(H, mode))
-            print(f"Step {i + 1}, NLL: {self.log_likelihood(mode, y)}")
+            #print(f"Step {i + 1}, NLL: {self.log_likelihood(mode, y)}")
         self.mode = mode
         return self
 
-    def fit(self, X_train, y_train, bounds=None, n_steps: int = 30, n_iter: int = 50):
-        """Train the model using the provided data, optimizing kernel parameters."""
+    def fit(self, X_train, y_train, bounds=None, n_steps: int = 30, n_iter: int = 50, num_init: int = 2):
+        """Train the model using the provided data, optimizing kernel parameters.
+        
+        Args:
+            X_train: Training features
+            y_train: Training labels
+            bounds: Parameter bounds for optimization
+            n_steps: Number of steps for posterior computation
+            n_iter: Number of iterations for each optimization attempt
+            num_init: Number of different initializations to try
+        """
         self.X_train = X_train
         self.y_train = y_train
 
@@ -44,17 +53,50 @@ class GaussianProcessClassifier:
                 self.kernel = Kernel.kernel(self.kernel_type, sigma_f=params[0], l=params[1])
             elif self.kernel_type == "linear":
                 self.kernel = Kernel.kernel(self.kernel_type, c=params[0])
-            self.posterior(X_train, y_train, n_steps)
-            return -self.log_likelihood(self.mode, y_train)  # Negative log likelihood
+            try:
+                self.posterior(X_train, y_train, n_steps)
+                return -self.log_likelihood(self.mode, y_train)  # Negative log likelihood
+            except np.linalg.LinAlgError:
+                return np.inf  # Return infinity for invalid parameters
 
         # Set initial parameters based on kernel type
-        initial_params = [self.kernel_params.get('sigma_f', 1.0), self.kernel_params.get('l', 1.0)] if self.kernel_type == "rbf" else [self.kernel_params.get('c', 0)]
-        if bounds is None:
-            bounds = [(0.1, 10), (0.1, 10)] if self.kernel_type == "rbf" else [(0, 10)]
+        if self.kernel_type == "rbf":
+            initial_params = [
+                self.kernel_params.get('sigma_f', 10.0),  # Start with larger initial values
+                self.kernel_params.get('l', 5.0)
+            ]
+            if bounds is None:
+                bounds = [(0.1, 50), (0.1, 50)]
+        else:
+            initial_params = [self.kernel_params.get('c', 0.1)]
+            if bounds is None:
+                bounds = [(0, 50)]
 
-        # Perform optimization
-        result = minimize(objective, initial_params, bounds=bounds, method='L-BFGS-B', options={'maxiter': n_iter})
-        optimized_params = result.x
+        best_result = None
+        best_objective = np.inf
+        
+        for i in range(num_init):
+            try:
+                current_params = initial_params if i == 0 else [
+                    np.random.uniform(low=b[0], high=b[1]) for b in bounds
+                ]
+                result = minimize(
+                    objective, 
+                    current_params, 
+                    bounds=bounds, 
+                    method='L-BFGS-B',
+                    options={'maxiter': n_iter, 'ftol': 1e-5}
+                )
+                if result.fun < best_objective:
+                    best_objective = result.fun
+                    best_result = result
+            except:
+                continue
+
+        if best_result is None:
+            raise ValueError("Optimization failed for all initializations")
+
+        optimized_params = best_result.x
         if self.kernel_type == "rbf":
             self.kernel_params = {'sigma_f': optimized_params[0], 'l': optimized_params[1]}
         elif self.kernel_type == "linear":
