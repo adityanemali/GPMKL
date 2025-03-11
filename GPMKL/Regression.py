@@ -10,7 +10,7 @@ For implementation, refer to examples folder.
 
 import numpy as np
 from scipy.optimize import minimize
-from .utils.kernels import Kernel
+from GPMKL.utils import Kernel  # Fixed import to use the correct module pathKernel
 
 
 class GaussianProcessRegression:

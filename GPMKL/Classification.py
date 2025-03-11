@@ -1,6 +1,8 @@
 import numpy as np
 from scipy.optimize import minimize
-from utils.kernels import Kernel
+from GPMKL.utils import Kernel  # Fixed import to use the correct module pathKernel
+
+
 
 class GaussianProcessClassifier:
     def __init__(self, kernel_type='linear', noise=1e-10, **kernel_params):
